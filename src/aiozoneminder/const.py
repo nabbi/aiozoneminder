@@ -37,6 +37,9 @@ API_MONITORS: Final = "api/monitors.json"
 API_MONITOR: Final = "api/monitors/{monitor_id}.json"
 API_EVENTS: Final = "api/events.json"
 API_EVENT: Final = "api/events/{event_id}.json"
+API_EVENT_COUNTS_UNARCHIVED: Final = (
+    "api/events/consoleEvents/{interval}/Archived=:0.json"
+)
 API_ALARM_ON: Final = "api/monitors/alarm/id:{monitor_id}/command:on.json"
 API_ALARM_OFF: Final = "api/monitors/alarm/id:{monitor_id}/command:off.json"
 API_STATES: Final = "api/states.json"

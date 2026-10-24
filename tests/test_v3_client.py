@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import asyncio
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 import logging
 from typing import Any
 
@@ -524,6 +524,55 @@ async def test_event_summary_failure(
     register_login(mocked)
     mocked.get(url("api/v3/event-summaries/1"), status=500)
     assert await client.get_event_summary(1) is None
+
+
+async def test_event_summary_without_archived(
+    client: ZoneMinderV3Client, mocked: aioresponses
+) -> None:
+    """zm-api can't leave archived events out (zm-api#205), so they're taken off."""
+    from .fixtures import EVENT_SUMMARY, event
+
+    register_login(mocked)
+    mocked.get(url("api/v3/event-summaries/1"), payload=EVENT_SUMMARY)
+    started = datetime.now(UTC) - timedelta(hours=2)
+    mocked.get(
+        url("api/v3/events"),
+        payload={
+            "items": [event(7, 1, start=started.strftime("%Y-%m-%dT%H:%M:%SZ"))],
+            "last_page": 1,
+        },
+    )
+    summary = await client.get_event_summary(1, include_archived=False)
+
+    assert summary is not None
+    # Fixture: hour 6, day 85, week 86, month 86, total 126, one archived.
+    assert (summary.hour_events, summary.day_events) == (6, 84)
+    assert (summary.week_events, summary.month_events) == (85, 85)
+    assert (summary.total_events, summary.archived_events) == (125, 1)
+    (request,) = [
+        call
+        for (verb, called), calls in mocked.requests.items()
+        if verb == "GET" and called.path == "/api/v3/events"
+        for call in calls
+    ]
+    assert request.kwargs["params"]["archived"] == "true"
+    assert request.kwargs["params"]["monitor_id"] == 1
+
+
+async def test_event_summary_without_archived_none_archived(
+    client: ZoneMinderV3Client, mocked: aioresponses
+) -> None:
+    """With nothing archived there is nothing to look up."""
+    from .fixtures import EVENT_SUMMARY
+
+    register_login(mocked)
+    mocked.get(
+        url("api/v3/event-summaries/1"),
+        payload={**EVENT_SUMMARY, "archived_events": 0},
+    )
+    summary = await client.get_event_summary(1, include_archived=False)
+    assert summary is not None and summary.day_events == 85
+    assert not [key for key in mocked.requests if key[1].path == "/api/v3/events"]
 
 
 # -- Run states ---------------------------------------------------------------

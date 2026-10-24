@@ -99,6 +99,20 @@ async def test_live_status(zm: ZoneMinderClient, monitor: Monitor) -> None:
     assert await zm.get_event_summary(monitor.id) is not None
 
 
+async def test_event_counts_without_archived(
+    zm: ZoneMinderClient, monitor: Monitor
+) -> None:
+    """Leaving archived events out never raises a count; the total loses them all."""
+    with_archived = await zm.get_event_summary(monitor.id)
+    without = await zm.get_event_summary(monitor.id, include_archived=False)
+    assert with_archived is not None and without is not None
+    for field in ("hour_events", "day_events", "week_events", "month_events"):
+        assert getattr(without, field) <= getattr(with_archived, field), field
+    assert without.total_events == (
+        with_archived.total_events - with_archived.archived_events
+    )
+
+
 async def test_snapshot(zm: ZoneMinderClient, monitor: Monitor) -> None:
     """A capturing monitor's snapshot is a JPEG."""
     image = await zm.async_get_snapshot(monitor.id)

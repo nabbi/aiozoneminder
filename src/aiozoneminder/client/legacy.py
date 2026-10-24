@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from dataclasses import replace
 import logging
 import re
 import time
@@ -23,6 +24,7 @@ from ..const import (
     API_CONFIGS,
     API_DAEMON_CHECK,
     API_EVENT,
+    API_EVENT_COUNTS_UNARCHIVED,
     API_EVENTS,
     API_LOGIN,
     API_LOGOUT,
@@ -95,6 +97,16 @@ _PTZ_NO_SPEED = {"home", "preset"}
 #: coordinator asks for them straight after the list, in the same poll.
 _MONITOR_LIST_TTL = 10.0
 
+#: consoleEvents interval for each EventSummary count, as zm-py sends them:
+#: ZoneMinder's periods are rolling, and "all" is a hundred years.
+_COUNT_INTERVALS = {
+    "hour_events": "1 hour",
+    "day_events": "1 day",
+    "week_events": "1 week",
+    "month_events": "1 month",
+    "total_events": "100 year",
+}
+
 #: The most events ZoneMinder returns per page (its paginator's maxLimit).
 _MAX_PAGE_SIZE = 100
 
@@ -146,6 +158,10 @@ class ZoneMinderLegacyClient(ZoneMinderClient):
         self._zms_checked = zms_path is not None
         self._statuses: dict[int, MonitorStatus] = {}
         self._summaries: dict[int, EventSummary] = {}
+        #: Counts without archived events (EventSummary field to monitor id to
+        #: count), None when ZoneMinder refused them, and when they were read.
+        self._unarchived: dict[str, dict[int, int]] | None = None
+        self._unarchived_at: float | None = None
         self._monitors_fetched_at: float | None = None
         self._go2rtc: dict[str, Any] | None = None
         self._go2rtc_checked = False
@@ -413,10 +429,58 @@ class ZoneMinderLegacyClient(ZoneMinderClient):
         await self._async_fresh_monitor_list()
         return dict(self._statuses)
 
-    async def get_event_summary(self, monitor_id: int) -> EventSummary | None:
-        """Return a monitor's event counts, from the monitor list."""
+    async def get_event_summary(
+        self, monitor_id: int, *, include_archived: bool = True
+    ) -> EventSummary | None:
+        """Return a monitor's event counts, from the monitor list.
+
+        The list's counts include archived events. Without them, the counts
+        come from consoleEvents instead: one request per period for every
+        monitor, reused for as long as the monitor list is.
+        """
         await self._async_fresh_monitor_list()
-        return self._summaries.get(monitor_id)
+        summary = self._summaries.get(monitor_id)
+        if summary is None or include_archived:
+            return summary
+        counts = await self._async_unarchived_counts()
+        if counts is None:
+            return None
+        return replace(
+            summary,
+            **{field: by_id.get(monitor_id, 0) for field, by_id in counts.items()},
+        )
+
+    async def _async_unarchived_counts(self) -> dict[str, dict[int, int]] | None:
+        """Return every monitor's event counts without archived events."""
+        if (
+            self._unarchived_at is not None
+            and time.monotonic() - self._unarchived_at <= _MONITOR_LIST_TTL
+        ):
+            return self._unarchived
+        counts: dict[str, dict[int, int]] = {}
+        try:
+            for field, interval in _COUNT_INTERVALS.items():
+                response = await self._request(
+                    "GET",
+                    API_EVENT_COUNTS_UNARCHIVED.format(interval=quote(interval)),
+                )
+                # A period with no events answers an empty list, not {}.
+                results = (
+                    response.get("results") if isinstance(response, dict) else None
+                )
+                counts[field] = (
+                    {_to_int(k): _to_int(v) for k, v in results.items()}
+                    if isinstance(results, dict)
+                    else {}
+                )
+        except ZMError as err:
+            # Kept for the TTL too, so a refusal isn't asked again per monitor.
+            _LOGGER.debug("Event counts without archived events failed: %s", err)
+            self._unarchived = None
+        else:
+            self._unarchived = counts
+        self._unarchived_at = time.monotonic()
+        return self._unarchived
 
     async def get_monitor(self, monitor_id: int) -> Monitor:
         """Return a single monitor."""

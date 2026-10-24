@@ -1247,3 +1247,87 @@ async def test_event_paging_keeps_what_it_has_on_a_missing_page(
         mocked.get(v2(r"api/events\.json"), status=404)
         events = await client.get_events(limit=500)
     assert [e.id for e in events] == [2]
+
+
+def _console_events(mocked: aioresponses, counts: dict[str, Any]) -> None:
+    """Register consoleEvents without archived events, one reply per interval."""
+    for interval, results in counts.items():
+        mocked.get(
+            v2(rf"api/events/consoleEvents/{interval}/Archived=:0\.json"),
+            payload={"results": results},
+        )
+
+
+async def test_event_counts_without_archived(client: ZoneMinderLegacyClient) -> None:
+    """Archived events left out come from consoleEvents, as zm-py counts them."""
+    with aioresponses() as mocked:
+        _login(mocked)
+        mocked.get(
+            v2(r"api/monitors\.json"),
+            payload={"monitors": [_monitor_item(1), _monitor_item(2)]},
+        )
+        _console_events(
+            mocked,
+            {
+                "1%20hour": [],  # no events at all comes back as a list
+                "1%20day": {"1": "40"},
+                "1%20week": {"1": "209", "2": "4"},
+                "1%20month": {"1": "789", "2": "4"},
+                "100%20year": {"1": "810", "2": "4"},
+            },
+        )
+        first = await client.get_event_summary(1, include_archived=False)
+        second = await client.get_event_summary(2, include_archived=False)
+        # One request per period for every monitor, not per monitor.
+        assert (
+            len(
+                sent(mocked, "GET", "api/events/consoleEvents/1%20day/Archived=:0.json")
+            )
+            == 1
+        )
+
+    assert first is not None and second is not None
+    assert (first.hour_events, first.day_events, first.week_events) == (0, 40, 209)
+    assert (first.month_events, first.total_events) == (789, 810)
+    assert (second.day_events, second.week_events, second.total_events) == (0, 4, 4)
+    # Disk use and the archived count stay as the monitor list has them.
+    assert (first.total_disk_space, first.archived_events) == (9000000, 2)
+
+
+async def test_event_counts_with_archived_by_default(
+    client: ZoneMinderLegacyClient,
+) -> None:
+    with aioresponses() as mocked:
+        _login(mocked)
+        mocked.get(v2(r"api/monitors\.json"), payload={"monitors": [_monitor_item(1)]})
+        summary = await client.get_event_summary(1)
+        assert not [key for key in mocked.requests if "consoleEvents" in str(key[1])]
+    assert summary is not None and summary.day_events == 41
+
+
+async def test_event_counts_without_archived_refused(
+    client: ZoneMinderLegacyClient,
+) -> None:
+    """A user without Events view gets no counts, and is asked once per poll."""
+    with aioresponses() as mocked:
+        _login(mocked)
+        mocked.get(
+            v2(r"api/monitors\.json"),
+            payload={"monitors": [_monitor_item(1), _monitor_item(2)]},
+        )
+        mocked.get(
+            v2(r"api/events/consoleEvents/1%20hour/Archived=:0\.json"),
+            status=401,
+            repeat=True,
+        )
+        assert await client.get_event_summary(1, include_archived=False) is None
+        assert await client.get_event_summary(2, include_archived=False) is None
+        # Refused, logged in again, refused: two requests, then none for monitor 2.
+        assert (
+            len(
+                sent(
+                    mocked, "GET", "api/events/consoleEvents/1%20hour/Archived=:0.json"
+                )
+            )
+            == 2
+        )

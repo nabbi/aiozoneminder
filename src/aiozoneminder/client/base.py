@@ -153,8 +153,14 @@ class ZoneMinderClient(ABC):
         events = await self.get_events(monitor_id=monitor_id, limit=limit)
         return [event for event in events if start <= event.start_time < end]
 
-    async def get_event_summary(self, monitor_id: int) -> EventSummary | None:
-        """Return event counts and disk usage for a monitor, if supported."""
+    async def get_event_summary(
+        self, monitor_id: int, *, include_archived: bool = True
+    ) -> EventSummary | None:
+        """Return event counts and disk usage for a monitor, if supported.
+
+        With ``include_archived=False`` the event counts leave archived events
+        out, as ZoneMinder's console counts them.
+        """
         return None
 
     # -- Alarm and control ---------------------------------------------------
