@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta, timezone
+import logging
 import re
 from typing import Any
 
@@ -117,6 +118,61 @@ async def test_go2rtc_stream_names_are_discovered(
         assert await client.get_stream_source(3) == "rtsp://192.168.0.45:8554/3"
         assert await client.get_stream_source(1) == "rtsp://192.168.0.45:8554/1_0"
         assert client.get_stream_type(1) == STREAM_TYPE_GO2RTC
+
+
+@pytest.mark.parametrize(
+    "path",
+    ["http://192.168.0.45:1984", "http://192.168.0.45:1984/", f"{GO2RTC}/"],
+)
+async def test_go2rtc_path_with_or_without_api(
+    client: ZoneMinderLegacyClient, path: str
+) -> None:
+    """ZoneMinder takes ZM_GO2RTC_PATH with or without the /api suffix."""
+    with aioresponses() as mocked:
+        _login(mocked)
+        mocked.get(
+            f"{ZM}/api/configs.json?token=token",
+            payload={
+                "configs": [{"Config": {"Name": "ZM_GO2RTC_PATH", "Value": path}}]
+            },
+        )
+        mocked.get(f"{GO2RTC}/streams", payload=GO2RTC_STREAMS)
+        mocked.get(GO2RTC, payload={"rtsp": {"listen": ":8554"}})
+
+        assert await client.get_stream_source(3) == "rtsp://192.168.0.45:8554/3"
+
+
+async def test_go2rtc_with_credentials(
+    client: ZoneMinderLegacyClient, caplog: pytest.LogCaptureFixture
+) -> None:
+    """A user:pass@ address keeps the real RTSP host, and its password out of logs."""
+    caplog.set_level(logging.DEBUG, logger="aiozoneminder")
+    with aioresponses() as mocked:
+        _login(mocked)
+        mocked.get(
+            f"{ZM}/api/configs.json?token=token",
+            payload={
+                "configs": [
+                    {
+                        "Config": {
+                            "Name": "ZM_GO2RTC_PATH",
+                            "Value": "http://admin:s3cret@192.168.0.45:1984/api",
+                        }
+                    }
+                ]
+            },
+        )
+        mocked.get(
+            "http://admin:s3cret@192.168.0.45:1984/api/streams", payload=GO2RTC_STREAMS
+        )
+        mocked.get(
+            "http://admin:s3cret@192.168.0.45:1984/api",
+            payload={"rtsp": {"listen": ":8554"}},
+        )
+
+        assert await client.get_stream_source(3) == "rtsp://192.168.0.45:8554/3"
+    assert "s3cret" not in caplog.text
+    assert "192.168.0.45:1984" in caplog.text
 
 
 async def test_falls_back_to_mjpeg_when_rtsp_is_off(

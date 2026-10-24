@@ -13,7 +13,7 @@ import logging
 import re
 import time
 from typing import Any
-from urllib.parse import quote, urlsplit
+from urllib.parse import quote, urlsplit, urlunsplit
 
 import aiohttp
 
@@ -725,8 +725,13 @@ class ZoneMinderLegacyClient(ZoneMinderClient):
             _LOGGER.debug("go2rtc is not configured (%s is unset)", CONFIG_GO2RTC_PATH)
             return None
 
+        # ZoneMinder takes the address with or without the /api suffix, and
+        # with credentials (user:pass@) when go2rtc requires them.
         api_url = api_url.rstrip("/")
-        base_url = api_url[: -len("/api")] if api_url.endswith("/api") else api_url
+        if not api_url.endswith("/api"):
+            api_url += "/api"
+        base_url = api_url[: -len("/api")]
+        shown = _without_credentials(base_url)
 
         try:
             async with self._session.get(
@@ -738,7 +743,7 @@ class ZoneMinderLegacyClient(ZoneMinderClient):
                 response.raise_for_status()
                 info = await response.json(content_type=None)
         except (aiohttp.ClientError, TimeoutError, ValueError) as err:
-            _LOGGER.warning("go2rtc at %s did not respond: %s", api_url, err)
+            _LOGGER.warning("go2rtc at %s did not respond: %s", shown, err)
             return None
 
         rtsp_port = _parse_rtsp_port(info)
@@ -746,7 +751,7 @@ class ZoneMinderLegacyClient(ZoneMinderClient):
             _LOGGER.info(
                 "go2rtc at %s has its RTSP server disabled, so it can't be "
                 "pulled from. Falling back to MJPEG",
-                base_url,
+                shown,
             )
 
         self._go2rtc = {
@@ -758,7 +763,7 @@ class ZoneMinderLegacyClient(ZoneMinderClient):
         self._go2rtc_streams = _match_streams(streams)
         _LOGGER.info(
             "go2rtc at %s: %d monitor streams matched",
-            base_url,
+            shown,
             len(self._go2rtc_streams),
         )
         return self._go2rtc
@@ -824,9 +829,19 @@ def _check_alarm_reply(response: Any, monitor_id: int) -> None:
 
 
 def _parse_host(url: str) -> str | None:
-    """Extract the hostname from a URL."""
-    match = re.match(r"https?://([^:/]+)", url)
-    return match.group(1) if match else None
+    """Extract the hostname from a URL, past any user:pass@."""
+    return urlsplit(url).hostname
+
+
+def _without_credentials(url: str) -> str:
+    """Return the URL without user:pass@, for logging."""
+    parts = urlsplit(url)
+    if parts.username is None and parts.password is None:
+        return url
+    netloc = parts.hostname or ""
+    if parts.port:
+        netloc += f":{parts.port}"
+    return urlunsplit(parts._replace(netloc=netloc))
 
 
 def _parse_rtsp_port(info: dict[str, Any]) -> int | None:
