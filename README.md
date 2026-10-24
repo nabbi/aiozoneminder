@@ -78,6 +78,11 @@ Where an API lacks a feature, reads return an empty result and actions raise
 - **Sessions.** The client uses the aiohttp session you pass in and never
   closes it.
 - **Logging in.** Call `authenticate()` once. Tokens are refreshed for you.
+  API v3 always needs a ZoneMinder user, even when ZoneMinder's own
+  authentication (`ZM_OPT_USE_AUTH`) is off, and raises
+  `ZMAuthenticationError` without one. With it off, API v2 accepts any
+  username and password. It is on by default only for new installs from
+  ZoneMinder 1.39.41.
 - **The event stream ends** when its token expires, about every ten minutes.
   Reconnect with `since=` set to the last event id you saw, and you won't miss
   anything in between.
