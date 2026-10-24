@@ -18,7 +18,6 @@ import aiohttp
 import pytest
 
 from aiozoneminder import (
-    BACKEND_LEGACY,
     BACKEND_V3,
     Monitor,
     RunState,
@@ -33,7 +32,6 @@ from .support import (
     CAUSE,
     CONFIG,
     client_for,
-    fixed_by,
     forced_alarm,
     mentions,
     restoring_modes,
@@ -70,7 +68,6 @@ async def test_capturing(zm: ZoneMinderClient, spare_monitor: Monitor) -> None:
     # restoring_modes waits for snapshots from the monitor again.
 
 
-@fixed_by("read API v2 event ends from EndDateTime", BACKEND_LEGACY)
 async def test_alarm(zm: ZoneMinderClient, recording_monitor: Monitor) -> None:
     """A forced alarm records an event that reads as open, then closed after cancelling.
 
@@ -117,7 +114,6 @@ async def test_event_stream(zm: ZoneMinderClient, recording_monitor: Monitor) ->
             await task
 
 
-@fixed_by("include running events in API v3 get_events_between", BACKEND_V3)
 async def test_events_between_running(
     zm: ZoneMinderClient, recording_monitor: Monitor
 ) -> None:
@@ -156,9 +152,6 @@ async def test_alarm_state(
         await until(f"no alarm state for monitor {spare}", unknown, timeout=30)
 
 
-@fixed_by(
-    "raise on API v2 alarm and monitor-edit errors inside 200 replies", BACKEND_LEGACY
-)
 async def test_alarm_not_capturing(
     zm: ZoneMinderClient, spare_monitor: Monitor
 ) -> None:
@@ -177,7 +170,6 @@ async def test_alarm_not_capturing(
 
 
 @v3_only
-@fixed_by("log API v3 snapshots of monitors that aren't capturing at debug")
 async def test_snapshot_not_capturing_quiet(
     zm: ZoneMinderClient, spare_monitor: Monitor, caplog: pytest.LogCaptureFixture
 ) -> None:
@@ -193,7 +185,6 @@ async def test_snapshot_not_capturing_quiet(
 
 
 @v3_only
-@fixed_by("fit API v3 alarm causes to zm-api's limit and keep its error text")
 async def test_long_alarm_cause(
     zm: ZoneMinderClient, recording_monitor: Monitor
 ) -> None:
@@ -204,7 +195,6 @@ async def test_long_alarm_cause(
         assert cause.startswith(event.cause[:20])
 
 
-@fixed_by("list ZoneMinder's KeyFrames+Ondemand decoding value")
 async def test_decoding_values_round_trip(
     zm: ZoneMinderClient, spare_monitor: Monitor
 ) -> None:
@@ -217,7 +207,6 @@ async def test_decoding_values_round_trip(
             assert got == value, f"decoding {value!r} read back as {got!r}"
 
 
-@fixed_by("send API v2 PTZ through ZoneMinder's control request", BACKEND_LEGACY)
 async def test_ptz(zm: ZoneMinderClient, monitors: list[Monitor]) -> None:
     """PTZ commands are accepted for a controllable camera (left, then stop).
 
@@ -330,7 +319,6 @@ async def _put_back(
     return problems
 
 
-@fixed_by("send is_active when creating an API v3 run state", BACKEND_V3)
 async def test_run_state_switch(
     backend: str, zm: ZoneMinderClient, spare_monitor: Monitor
 ) -> None:
@@ -410,7 +398,6 @@ async def _revoke_tokens(backend: str, session: aiohttp.ClientSession) -> None:
 
 
 @v3_only
-@fixed_by("renew the API v3 token for media, the event stream and WHEP")
 async def test_media_after_logout_elsewhere(
     backend: str,
     zm: ZoneMinderClient,
@@ -441,7 +428,6 @@ async def test_media_after_logout_elsewhere(
 
 
 @v3_only
-@fixed_by("retry once more when zm-api revokes the token renewed in the logout second")
 async def test_requests_after_logout_elsewhere(
     backend: str, zm: ZoneMinderClient, live_http: aiohttp.ClientSession
 ) -> None:

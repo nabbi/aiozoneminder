@@ -27,7 +27,7 @@ from aiozoneminder.const import (
     STREAM_TYPE_GO2RTC,
 )
 
-from .support import CONFIG, client_for, fixed_by, is_jpeg, until
+from .support import CONFIG, client_for, is_jpeg, until
 
 pytestmark = pytest.mark.asyncio(loop_scope="session")
 
@@ -78,7 +78,6 @@ async def test_monitors(
     )
 
 
-@fixed_by("list ZoneMinder's KeyFrames+Ondemand decoding value")
 async def test_decoding_values(monitors: list[Monitor]) -> None:
     """The decoding choices are ZoneMinder's, so a monitor's is never unknown."""
     assert "KeyFrames+Ondemand" in DECODING_OPTIONS
@@ -86,9 +85,6 @@ async def test_decoding_values(monitors: list[Monitor]) -> None:
         assert m.decoding in DECODING_OPTIONS, (m.id, m.decoding)
 
 
-@fixed_by(
-    "read API v2 live status and event summaries from monitors.json", BACKEND_LEGACY
-)
 async def test_live_status(zm: ZoneMinderClient, monitor: Monitor) -> None:
     """Capture status and event counts are available for a capturing monitor."""
     statuses = await zm.get_monitor_statuses()
@@ -220,7 +216,6 @@ async def _event_count(zm: ZoneMinderClient, monitor_id: int | None) -> int | No
     return None if last_page is None else int(last_page)
 
 
-@fixed_by("page through API v2 events past the server's 100-event cap", BACKEND_LEGACY)
 async def test_events_past_100(zm: ZoneMinderClient, monitor: Monitor) -> None:
     """Asking for 150 events gets them all, up to 150, when there are over 100.
 
@@ -244,7 +239,6 @@ async def test_events_past_100(zm: ZoneMinderClient, monitor: Monitor) -> None:
     assert starts == sorted(starts, reverse=True)
 
 
-@fixed_by("leave deleted monitors out of the API v2 monitor list", BACKEND_LEGACY)
 async def test_deleted_monitors_hidden(
     zm: ZoneMinderClient, monitors: list[Monitor]
 ) -> None:
@@ -266,7 +260,6 @@ async def test_deleted_monitors_hidden(
 
 
 @v2_only
-@fixed_by("take API v2 event times from their Unix timestamps")
 async def test_v2_event_times_any_zone(
     backend: str, zm: ZoneMinderClient, live_http: aiohttp.ClientSession
 ) -> None:
@@ -298,7 +291,6 @@ async def test_v2_event_times_any_zone(
 
 
 @v2_only
-@fixed_by("read API v2 events without their frames")
 async def test_v2_event_without_frames(
     zm: ZoneMinderClient, monitor: Monitor, requests_seen: list[str]
 ) -> None:
@@ -316,7 +308,6 @@ async def test_v2_event_without_frames(
 
 
 @v2_only
-@fixed_by("keep the token out of API v2 snapshot errors and log in again once")
 async def test_v2_snapshot_dead_token(
     backend: str,
     monitor: Monitor,
@@ -336,13 +327,6 @@ async def test_v2_snapshot_dead_token(
     assert is_jpeg(image), "no snapshot after the token expired"
 
 
-@fixed_by(
-    "raise ZMApiError, not an auth error, for API v2 permission refusals",
-    BACKEND_LEGACY,
-)
-@fixed_by(
-    "report ZoneMinder's running state as unknown when it can't be read", BACKEND_V3
-)
 async def test_restricted_user(
     backend: str, zm: ZoneMinderClient, live_http: aiohttp.ClientSession
 ) -> None:
@@ -380,7 +364,6 @@ async def test_restricted_user(
 
 
 @v3_only
-@fixed_by("start API v3 live sessions again after zm-api reaps them")
 async def test_live_hls_after_idle(zm: ZoneMinderClient, monitor: Monitor) -> None:
     """Live video plays again after nobody watched it for a while (takes 2 minutes).
 
