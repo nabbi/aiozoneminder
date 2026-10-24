@@ -20,6 +20,7 @@ from typing import Any
 import aiohttp
 
 from ..const import (
+    ALARM_STATES,
     BACKEND_V3,
     DEFAULT_TIMEOUT,
     LONG_TIMEOUT,
@@ -46,6 +47,7 @@ from ..const import (
     V3_MONITOR_ALARM,
     V3_MONITOR_SNAPSHOT,
     V3_MONITOR_STATUS,
+    V3_MONITOR_STATUS_ONE,
     V3_MONITORS,
     V3_PTZ_FOCUS,
     V3_PTZ_HOME,
@@ -765,6 +767,21 @@ class ZoneMinderV3Client(ZoneMinderClient):
 
         await self._request("POST", endpoint, json=body)
         _LOGGER.debug("PTZ %s sent to monitor %d", command, monitor_id)
+
+    async def get_alarm_state(self, monitor_id: int) -> str | None:
+        """Return a monitor's alarm state, which zm-api reads from zmc's memory.
+
+        zm-api leaves it out while zmc isn't running, and has no status row
+        for a monitor that never started.
+        """
+        try:
+            response = await self._request(
+                "GET", V3_MONITOR_STATUS_ONE.format(monitor_id=monitor_id)
+            )
+        except ZMNotFoundError:
+            return None
+        state = response.get("alarm_state") if isinstance(response, dict) else None
+        return state if state in ALARM_STATES else None
 
     async def get_ptz_presets(self, monitor_id: int) -> dict[int, str]:
         """Return the configured PTZ presets for a monitor."""

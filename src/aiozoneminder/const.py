@@ -42,6 +42,7 @@ API_EVENT_COUNTS_UNARCHIVED: Final = (
 )
 API_ALARM_ON: Final = "api/monitors/alarm/id:{monitor_id}/command:on.json"
 API_ALARM_OFF: Final = "api/monitors/alarm/id:{monitor_id}/command:off.json"
+API_ALARM_STATUS: Final = "api/monitors/alarm/id:{monitor_id}/command:status.json"
 API_STATES: Final = "api/states.json"
 API_SERVERS: Final = "api/servers.json"
 API_DAEMON_CHECK: Final = "api/host/daemonCheck.json"
@@ -71,6 +72,7 @@ V3_MONITOR: Final = "api/v3/monitors/{monitor_id}"
 V3_MONITOR_ALARM: Final = "api/v3/monitors/{monitor_id}/alarm"
 V3_MONITOR_SNAPSHOT: Final = "api/v3/monitors/{monitor_id}/snapshot"
 V3_MONITOR_STATUS: Final = "api/v3/monitor-status"
+V3_MONITOR_STATUS_ONE: Final = "api/v3/monitor-status/{monitor_id}"
 
 V3_EVENTS: Final = "api/v3/events"
 V3_EVENT_STREAM: Final = "api/v3/events/stream"
@@ -106,6 +108,9 @@ V3_SERVER_CONTROL: Final = "api/v3/server/control/{action}"
 
 #: What server_control accepts: ZoneMinder's own start, stop and restart.
 SERVER_ACTIONS: Final = ["start", "stop", "restart"]
+
+#: What get_alarm_state() returns, zmu's names for a monitor's states.
+ALARM_STATES: Final = ["idle", "prealarm", "alarm", "alert"]
 
 # -- Monitor modes -----------------------------------------------------------
 # ZoneMinder 1.37 split the single "Function" into separate fields. These

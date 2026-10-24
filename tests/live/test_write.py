@@ -130,6 +130,32 @@ async def test_events_between_running(
     assert event.id in [e.id for e in found], f"running event {event.id} missing"
 
 
+async def test_alarm_state(
+    zm: ZoneMinderClient, recording_monitor: Monitor, spare_monitor: Monitor
+) -> None:
+    """The alarm state follows a forced alarm, and is unknown without capture.
+
+    Home Assistant shows it as the camera recording and the force alarm switch.
+    """
+    mid = recording_monitor.id
+    async with forced_alarm(zm, mid):
+        assert await zm.get_alarm_state(mid) in ("alarm", "alert")
+
+    async def idle() -> bool:
+        return await zm.get_alarm_state(mid) == "idle"
+
+    await until(f"monitor {mid} back to idle", idle, timeout=30)
+
+    spare = spare_monitor.id
+    async with restoring_modes(zm, spare):
+        await zm.set_monitor_state(spare, capturing="None")
+
+        async def unknown() -> bool:
+            return await zm.get_alarm_state(spare) is None
+
+        await until(f"no alarm state for monitor {spare}", unknown, timeout=30)
+
+
 @fixed_by(
     "raise on API v2 alarm and monitor-edit errors inside 200 replies", BACKEND_LEGACY
 )

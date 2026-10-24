@@ -173,6 +173,14 @@ class ZoneMinderClient(ABC):
     async def cancel_alarm(self, monitor_id: int) -> None:
         """Clear a forced alarm."""
 
+    async def get_alarm_state(self, monitor_id: int) -> str | None:
+        """Return a monitor's alarm state, one of ``ALARM_STATES``.
+
+        None when ZoneMinder can't say: the monitor isn't capturing, or its
+        capture daemon isn't running.
+        """
+        raise ZMNotSupportedError("This API cannot read alarm states")
+
     @abstractmethod
     async def ptz(self, monitor_id: int, command: str, **kwargs: Any) -> None:
         """Issue a PTZ command from the vocabulary in ``PTZ_COMMANDS``."""

@@ -582,6 +582,45 @@ async def test_alarm_failures_raise(client: ZoneMinderLegacyClient) -> None:
             await client.cancel_alarm(1)
 
 
+@pytest.mark.parametrize(
+    ("reply", "state"),
+    [
+        # The values ZoneMinder 1.38 and master answer: zmu's state less one.
+        ({"status": 0, "output": 0}, "idle"),
+        ({"status": 1, "output": 1}, "prealarm"),
+        ({"status": 2, "output": 2}, "alarm"),
+        ({"status": 3, "output": 3}, "alert"),
+        ({"status": -1, "output": -1}, None),
+        # zmu failed: the monitor isn't capturing.
+        ({"status": "false", "code": 255, "error": "0"}, None),
+    ],
+)
+async def test_alarm_state(
+    client: ZoneMinderLegacyClient, reply: dict[str, Any], state: str | None
+) -> None:
+    with aioresponses() as mocked:
+        _login(mocked)
+        mocked.get(v2(r"api/monitors/alarm/id:1/command:status\.json"), payload=reply)
+        assert await client.get_alarm_state(1) == state
+
+
+async def test_alarm_state_comes_from_the_monitors_own_server(
+    client: ZoneMinderLegacyClient,
+) -> None:
+    """Only the server recording a camera has its capture daemon to ask."""
+    with aioresponses() as mocked:
+        _login(mocked)
+        mocked.get(v2(r"api/monitors\.json"), payload={"monitors": [_monitor_on(2, 2)]})
+        mocked.get(v2(r"api/servers\.json"), payload=SERVERS_RESPONSE)
+        remote = (
+            "https://garage.local:8443/zoneminder/api/monitors/alarm/id:2"
+            "/command:status.json"
+        )
+        mocked.get(re.compile(rf"^{re.escape(remote)}(\?.*)?$"), payload={"status": 2})
+        await client.get_monitors()
+        assert await client.get_alarm_state(2) == "alarm"
+
+
 async def test_failed_monitor_save_raises(client: ZoneMinderLegacyClient) -> None:
     """A monitor save that fails answers 200 with an "Error ..." message."""
     with aioresponses() as mocked:

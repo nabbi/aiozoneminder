@@ -13,6 +13,8 @@ First release, extracted from the zm-homeassistant Home Assistant integration.
   PTZ, alarms, snapshots, MJPEG with optional scale and frame rate limits, and
   go2rtc discovery. Handles multi-server setups, finds nph-zms wherever the
   package put it, and skips monitors ZoneMinder 1.38 has soft-deleted.
+- `get_alarm_state` reads a monitor's alarm state on both APIs: zm-api's
+  live status, or zmu through API v2's alarm status, as zm-py does.
 - PTZ moves, zoom and focus always send a speed, so cameras move instead of
   stopping.
 - Features one API lacks raise `ZMNotSupportedError` or return an empty

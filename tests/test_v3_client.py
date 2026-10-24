@@ -653,6 +653,25 @@ async def test_alarms(client: ZoneMinderV3Client, mocked: aioresponses) -> None:
     assert off.kwargs["json"] == {"action": "off"}
 
 
+async def test_alarm_state(client: ZoneMinderV3Client, mocked: aioresponses) -> None:
+    register_login(mocked)
+    mocked.get(
+        url("api/v3/monitor-status/1"),
+        payload={"monitor_id": 1, "status": "Connected", "alarm_state": "alarm"},
+    )
+    # zm-api leaves the state out while zmc isn't running.
+    mocked.get(
+        url("api/v3/monitor-status/2"),
+        payload={"monitor_id": 2, "status": "NotRunning"},
+    )
+    # A monitor that never started has no status row.
+    mocked.get(url("api/v3/monitor-status/3"), status=404)
+
+    assert await client.get_alarm_state(1) == "alarm"
+    assert await client.get_alarm_state(2) is None
+    assert await client.get_alarm_state(3) is None
+
+
 async def test_long_alarm_cause_is_cut_to_fit(
     client: ZoneMinderV3Client, mocked: aioresponses
 ) -> None:
