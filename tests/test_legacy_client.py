@@ -431,6 +431,24 @@ async def test_run_states_switch_by_name(client: ZoneMinderLegacyClient) -> None
     assert states[0].active
 
 
+async def test_run_state_switch_waits_for_the_restart(
+    client: ZoneMinderLegacyClient,
+) -> None:
+    """ZoneMinder answers a switch only after restarting every daemon.
+
+    With 45 monitors that took 11 s in a lab, past the 10 s default, so the
+    switch reported a failure for a change that went through.
+    """
+    from aiozoneminder import RunState
+
+    with aioresponses() as mocked:
+        _login(mocked)
+        mocked.post(v2(r"api/states/change/default\.json"), payload={})
+        await client.set_run_state(RunState(1, "default", "", True))
+        (call,) = sent(mocked, "POST", "api/states/change/default.json")
+    assert call.kwargs["timeout"].total >= 60
+
+
 async def test_saving_run_states_needs_api_v3(client: ZoneMinderLegacyClient) -> None:
     """API v2 can switch run states but not save them."""
     with pytest.raises(ZMNotSupportedError):
@@ -1150,12 +1168,16 @@ async def test_default_stream_is_full_size(client: ZoneMinderLegacyClient) -> No
 
 @pytest.mark.parametrize("action", ["start", "stop", "restart"])
 async def test_server_control(client: ZoneMinderLegacyClient, action: str) -> None:
-    """Start, stop and restart go to zmpkg.pl through the states API."""
+    """Start, stop and restart go to zmpkg.pl through the states API.
+
+    Like a run state switch, the reply waits for the daemons to restart.
+    """
     with aioresponses() as mocked:
         _login(mocked)
         mocked.post(v2(rf"api/states/change/{action}\.json"), payload={})
         await client.server_control(action)
-        assert sent(mocked, "POST", f"api/states/change/{action}.json")
+        (call,) = sent(mocked, "POST", f"api/states/change/{action}.json")
+    assert call.kwargs["timeout"].total >= 60
 
 
 async def test_server_control_rejects_other_actions(

@@ -98,6 +98,10 @@ _MONITOR_LIST_TTL = 10.0
 #: The most events ZoneMinder returns per page (its paginator's maxLimit).
 _MAX_PAGE_SIZE = 100
 
+#: Seconds to wait for states/change (a run state, or start/stop/restart): it
+#: answers only after zmpkg has restarted every daemon.
+_STATE_CHANGE_TIMEOUT = 120
+
 #: ZoneMinder 1.37 renamed the single Function field. Writing both keeps this
 #: backend working across 1.36 and 1.37+.
 _FUNCTION_FROM_STATE = {
@@ -233,6 +237,8 @@ class ZoneMinderLegacyClient(ZoneMinderClient):
 
         url = endpoint if "://" in endpoint else self._build_url(endpoint)
         base_params = kwargs.pop("params", {})
+        total = kwargs.pop("timeout", None)
+        timeout = aiohttp.ClientTimeout(total=total) if total else self._timeout
 
         for attempt in (1, 2):
             params = dict(base_params)
@@ -243,7 +249,7 @@ class ZoneMinderLegacyClient(ZoneMinderClient):
                     method,
                     url,
                     params=params,
-                    timeout=self._timeout,
+                    timeout=timeout,
                     ssl=self._verify_ssl,
                     **kwargs,
                 ) as response:
@@ -468,14 +474,25 @@ class ZoneMinderLegacyClient(ZoneMinderClient):
         ]
 
     async def set_run_state(self, state: RunState) -> None:
-        """Switch run state; ZoneMinder applies it and restarts its daemons."""
+        """Switch run state; ZoneMinder applies it and restarts its daemons.
+
+        ZoneMinder answers only once zmpkg has restarted every daemon, which
+        takes longer the more monitors there are (about 11 s for 45 in a lab),
+        so this call waits longer than the others.
+        """
         await self._request(
-            "POST", API_STATE_CHANGE.format(name=quote(state.name, safe=""))
+            "POST",
+            API_STATE_CHANGE.format(name=quote(state.name, safe="")),
+            timeout=_STATE_CHANGE_TIMEOUT,
         )
 
     async def _async_server_control(self, action: str) -> None:
         """zmpkg.pl takes start, stop and restart as well as run state names."""
-        await self._request("POST", API_STATE_CHANGE.format(name=action))
+        await self._request(
+            "POST",
+            API_STATE_CHANGE.format(name=action),
+            timeout=_STATE_CHANGE_TIMEOUT,
+        )
 
     # -- Events --------------------------------------------------------------
 
