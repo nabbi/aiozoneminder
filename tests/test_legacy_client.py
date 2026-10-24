@@ -1055,6 +1055,7 @@ SERVERS_RESPONSE = {
                 "Port": "8443",
                 "PathToIndex": "/zoneminder/index.php",
                 "PathToZMS": "/cgi-bin-zm/nph-zms",
+                "PathToApi": "/zoneminder/api",
             }
         },
     ]
@@ -1141,6 +1142,36 @@ async def test_ptz_goes_to_the_monitors_own_server(
         ]
     assert call.kwargs["data"]["control"] == "moveConUp"
     assert call.kwargs["params"] == {"token": "token"}
+
+
+async def test_alarms_go_to_the_monitors_own_server(
+    client: ZoneMinderLegacyClient,
+) -> None:
+    """zmu on the main server can't reach another server's cameras."""
+    with aioresponses() as mocked:
+        _login(mocked)
+        mocked.get(v2(r"api/monitors\.json"), payload={"monitors": [_monitor_on(2, 2)]})
+        mocked.get(v2(r"api/servers\.json"), payload=SERVERS_RESPONSE)
+        remote = "https://garage.local:8443/zoneminder/api/monitors/alarm/id:2"
+        mocked.get(
+            re.compile(rf"^{re.escape(remote)}/command:(on|off)\.json(\?.*)?$"),
+            payload={},
+            repeat=True,
+        )
+        await client.get_monitors()
+        await client.trigger_alarm(2, "Doorbell")
+        await client.cancel_alarm(2)
+        calls = [
+            (str(called), c)
+            for (verb, called), cs in mocked.requests.items()
+            if verb == "GET" and str(called).startswith(remote)
+            for c in cs
+        ]
+    assert [url.split("?")[0] for url, _ in calls] == [
+        f"{remote}/command:on.json",
+        f"{remote}/command:off.json",
+    ]
+    assert calls[0][1].kwargs["params"] == {"cause": "Doorbell", "token": "token"}
 
 
 # -- Stream scale and frame rate --------------------------------------------------

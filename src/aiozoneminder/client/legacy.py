@@ -151,8 +151,8 @@ class ZoneMinderLegacyClient(ZoneMinderClient):
         self._stream_maxfps = stream_maxfps
         #: Monitor id to the id of the server recording it, when not the main one.
         self._monitor_servers: dict[int, int] = {}
-        #: Server id to (nph-zms URL, index.php URL); None until first needed.
-        self._servers: dict[int, tuple[str, str]] | None = None
+        #: Server id to (nph-zms URL, index.php URL, API URL); None until first needed.
+        self._servers: dict[int, tuple[str, str, str]] | None = None
         self._auth_token: str | None = None
         self._zms_url: str | None = _zms_url(self._host, zms_path) if zms_path else None
         self._zms_checked = zms_path is not None
@@ -379,8 +379,8 @@ class ZoneMinderLegacyClient(ZoneMinderClient):
             self._servers = await self._async_load_servers()
         return monitors
 
-    async def _async_load_servers(self) -> dict[int, tuple[str, str]]:
-        """Read the multi-server list: where each server serves streams and PTZ."""
+    async def _async_load_servers(self) -> dict[int, tuple[str, str, str]]:
+        """Read the multi-server list: where each server serves streams, PTZ, alarms."""
         try:
             response = await self._request("GET", API_SERVERS)
         except ZMError as err:
@@ -391,7 +391,7 @@ class ZoneMinderLegacyClient(ZoneMinderClient):
                 err,
             )
             return {}
-        servers: dict[int, tuple[str, str]] = {}
+        servers: dict[int, tuple[str, str, str]] = {}
         for item in response.get("servers") or []:
             raw = item.get("Server", item)
             if not raw.get("Hostname"):
@@ -403,14 +403,16 @@ class ZoneMinderLegacyClient(ZoneMinderClient):
             base = f"{scheme}://{netloc}"
             zms = raw.get("PathToZMS") or "/zm/cgi-bin/nph-zms"
             index = raw.get("PathToIndex") or "/zm/index.php"
+            api = raw.get("PathToApi") or "/zm/api"
             servers[_to_int(raw.get("Id"))] = (
                 f"{base}/{zms.lstrip('/')}",
                 f"{base}/{index.lstrip('/')}",
+                f"{base}/{api.strip('/')}",
             )
         return servers
 
-    def _monitor_server(self, monitor_id: int) -> tuple[str, str] | None:
-        """Return (nph-zms URL, index.php URL) of a monitor's own server, if remote."""
+    def _monitor_server(self, monitor_id: int) -> tuple[str, str, str] | None:
+        """Return (nph-zms URL, index.php URL, API URL) of a monitor's own server."""
         server_id = self._monitor_servers.get(monitor_id)
         if server_id is None or not self._servers:
             return None
@@ -622,16 +624,29 @@ class ZoneMinderLegacyClient(ZoneMinderClient):
         every monitor, which would refuse users who may edit only some.
         """
         response = await self._request(
-            "GET", API_ALARM_ON.format(monitor_id=monitor_id), params={"cause": cause}
+            "GET",
+            self._alarm_endpoint(monitor_id, API_ALARM_ON),
+            params={"cause": cause},
         )
         _check_alarm_reply(response, monitor_id)
 
     async def cancel_alarm(self, monitor_id: int) -> None:
         """Clear a forced alarm."""
         response = await self._request(
-            "GET", API_ALARM_OFF.format(monitor_id=monitor_id)
+            "GET", self._alarm_endpoint(monitor_id, API_ALARM_OFF)
         )
         _check_alarm_reply(response, monitor_id)
+
+    def _alarm_endpoint(self, monitor_id: int, endpoint: str) -> str:
+        """Return where to change a monitor's alarm.
+
+        zmu only reaches the capture daemons of the server it runs on, so in a
+        multi-server setup the alarm goes to the API of the monitor's own server.
+        """
+        path = endpoint.format(monitor_id=monitor_id)
+        if server := self._monitor_server(monitor_id):
+            return f"{server[2]}/{path.removeprefix('api/')}"
+        return path
 
     async def ptz(self, monitor_id: int, command: str, **kwargs: Any) -> None:
         """Issue a PTZ command.
